@@ -9,7 +9,7 @@ from config import CONFIG
 class Verifier:
     @staticmethod
     def password_is_valid(password: str):
-        if len(password) < CONFIG.min_passwords_length:
+        if len(password) < CONFIG.minimal_password_length:
             return False
         if password in CONFIG.banned_passwords:
             return False
@@ -18,7 +18,7 @@ class Verifier:
 
     @staticmethod
     def username_is_valid(username: str):
-        if len(username) < CONFIG.min_username_length:
+        if len(username) < CONFIG.minimal_username_length:
             return False
         if username in CONFIG.banned_usernames:
             return False
@@ -68,12 +68,12 @@ class DataBase:
 
     def login_user(self, user: User) -> bool:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
-            cur.execute(f"SELECT * FROM users WHERE login={user.login} AND pasword={user.password}")
+            cur.execute(f"SELECT * FROM users WHERE login='{user.login}' AND password='{user.password}'")
             return len(cur.fetchall()) != 0
 
     def get_vacations_for_user(self, user: User) -> List[Vacation]:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
-            cur.execute(f"SELECT * FROM vacations WHERE user_id={user._id}")
+            cur.execute(f"SELECT * FROM vacations WHERE user_id='{user._id}'")
             if cur.fetchall() == []:
                 return None
             return [Vacation.from_sql(vacation) for vacation in cur.fetchall()]
@@ -93,19 +93,20 @@ class DataBase:
             post representation
         """
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
-            cur.execute(f"SELECT * FROM posts WHERE name={name}")
+            cur.execute(f"SELECT * FROM posts WHERE name='{name}'")
             if cur.fetchall() == []:
                 return None
             return Post(**cur.fetchone())
 
-    def get_user(self, login) -> Union[User, None]:
+    def get_user(self, user: Union[str, User]) -> Union[User, None]:
+        if isinstance(user, User):
+            user = user.login
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
-            cur.execute(f"SELECT * FROM users WHERE login={login}")
-            if cur.fetchall() == []:
-                return None
+            cur.execute(f"SELECT * FROM users WHERE login='{user}'")
             result = cur.fetchone()
-            result["vacations"] = self.get_vacations_for_user(User(_id=result.get("id")))
-            return User.from_sql(result)
+            if result is None:
+                return None
+            return User.from_sql(**result, vacations=self.get_vacations_for_user(User(_id=result.get("id"))))
 
     def __delete__(self, instance):
         self.connection.close()

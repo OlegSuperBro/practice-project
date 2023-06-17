@@ -4,6 +4,6 @@ banned_passwords:
   - "1234567890"
   - "qwerty"
 
-minimal_username_lenght: 1
+minimal_username_length: 1
 banned_usernames:
-  - "root"
+  -

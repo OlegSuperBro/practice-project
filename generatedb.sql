@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS posts;
 
 CREATE TABLE posts (
-  id integer,
+  id serial,
   name text,
   max_vacations text,
   UNIQUE (name),
@@ -11,7 +11,7 @@ CREATE TABLE posts (
 );
 
 CREATE TABLE users (
-  id integer,
+  id serial,
   login text NOT NULL,
   password text NOT NULL,
   first_name text NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE users (
 
 
 CREATE TABLE vacations (
-  id integer,
+  id serial,
   user_id integer NOT NULL REFERENCES users ON DELETE CASCADE,
   start_date date NOT NULL,
   end_date date NOT NULL,
