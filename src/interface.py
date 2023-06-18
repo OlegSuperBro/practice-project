@@ -2,6 +2,7 @@ import PySimpleGUI as psg
 import asyncio
 import datetime
 import sys
+import openpyxl
 from typing import Self
 from copy import deepcopy
 
@@ -66,6 +67,7 @@ class StartForm(TemplateForm):
     LAYOUT = [[psg.VPush(background_color=Theme.push_background)],
               [psg.Push(background_color=Theme.push_background), psg.Button("Вход", key="-LOGIN-", size=(25, 1), font=(FONT_NAME, 20, "bold")), psg.Push(background_color=Theme.push_background)],
               [psg.Push(background_color=Theme.push_background), psg.Button("Регистрация", key="-REGISTER-", size=(25, 1), font=(FONT_NAME, 20, "bold")), psg.Push(background_color=Theme.push_background)],
+              [psg.Push(background_color=Theme.push_background), psg.Button("Экспортировать все отпуски", key="-SHOW_VACATIONS-", size=(25, 1), font=(FONT_NAME, 9, "bold")), psg.Push(background_color=Theme.push_background)],
               [psg.VPush(background_color=Theme.push_background)]]
 
     WINDOW_SIZE = (225, 175)
@@ -76,6 +78,7 @@ class StartForm(TemplateForm):
         self.EVENT_FUNCS = {
             "-LOGIN-": lambda: self.login(),
             "-REGISTER-": lambda: self.register(),
+            "-SHOW_VACATIONS-": lambda: self.export_vacations()
         }
 
     def login(self):
@@ -83,6 +86,29 @@ class StartForm(TemplateForm):
 
     def register(self):
         self.change_window(RegisterForm())
+
+    def export_vacations(self):
+        file_path = psg.PopupGetFile("Сохранить как", "Сохранить как...", save_as=True, no_window=True)
+
+        if file_path is None:
+            return
+
+        all_user = DataBase().get_users()
+
+        workbook = openpyxl.Workbook()
+        worksheet = workbook.active
+
+        for user in all_user:
+            tmp_username = f"{user.first_name if user.first_name is not None else ''} {user.second_name if user.second_name is not None else ''} {user.surname if user.second_name is not None else ''}"
+            tmp_str = ""
+            for vacation in user.vacations:
+                tmp_str += f"{vacation.start_date.strftime('%d/%m/%Y')}-{vacation.end_date.strftime('%d/%m/%Y')}\n"
+            worksheet.append([tmp_username, tmp_str])
+        try:
+            workbook.save(file_path)
+            psg.popup("Экспортировано успешно")
+        except PermissionError:
+            psg.popup("Не удалось открыть файл, возможно он занят другой программой или процессом", title="Ошибка")
 
 
 class RecoveryForm(TemplateForm):
@@ -266,7 +292,7 @@ class UserForm(TemplateForm):
 
     def save(self) -> None:
         if len(self.vacations) > len(self.user.post.max_vacations_length):
-            psg.popup(f"Превышено максимум отпусков ({self.user.post.max_vacations_length})", title="Ошибка")
+            psg.popup(f"Превышено максимум отпусков ({len(self.user.post.max_vacations_length)})", title="Ошибка")
             return
 
         for index1, vacation in enumerate(self.vacations):
@@ -391,7 +417,7 @@ class AdminForm(TemplateForm):
 
     def save_vacations(self) -> None:
         if len(self.vacations) > len(self.user.post.max_vacations_length):
-            psg.popup(f"Превышено максимум отпусков ({self.user.post.max_vacations_length})", title="Ошибка")
+            psg.popup(f"Превышено максимум отпусков ({len(self.user.post.max_vacations_length)})", title="Ошибка")
             return
 
         for index1, vacation in enumerate(self.vacations):
@@ -426,8 +452,8 @@ class AdminForm(TemplateForm):
 if __name__ == "__main__":
     # form = UserForm(DataBase().get_user("root"))
     # form = AdminForm(DataBase().get_user("root"))
-    # form = StartForm()
-    form = RecoveryForm()
+    form = StartForm()
+    # form = RecoveryForm()
 
     event_loop = asyncio.get_event_loop()
     asyncio.set_event_loop(event_loop)
