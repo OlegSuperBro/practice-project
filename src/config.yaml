@@ -1,3 +1,11 @@
+smtp_server: "smtp.gmail.com"
+smtp_port: 587
+send_mail: somethingfor227@gmail.com
+send_mail_password:
+
+
+recovery_mail: olegrakovic323@gmail.com
+
 minimal_password_length: 5
 banned_passwords:
   - "12345"

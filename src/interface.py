@@ -7,6 +7,7 @@ from copy import deepcopy
 
 from database import DataBase, Verifier
 from datatypes import User, Post, Vacation
+from recover import send_email, create_recovery_code
 
 
 FONT_NAME = "Arial"
@@ -82,6 +83,30 @@ class StartForm(TemplateForm):
 
     def register(self):
         self.change_window(RegisterForm())
+
+
+class RecoveryForm(TemplateForm):
+    LAYOUT = [[psg.Button("<", key="-BACK-", size=(2, 1), button_color=Theme.button_color)],
+              [psg.Column([[psg.Text("Если вы забыли пароль, то можете отправить запрос на востановление.")],
+                           [psg.Text("Логин"), psg.Input(size=(20, 1))],
+                           [psg.Text("Добавить дополнительную информацию (например почту для контакта)")],
+                           [psg.Multiline(size=(40, 5))],
+                           [psg.Push(), psg.Button("Отправить запрос")],
+                           [psg.Text("Если у вас уже есть код введите его")],
+                           [psg.Text("Логин"), psg.Input(size=(20, 1)), psg.Text("Код"), psg.Input(size=(10, 1))],
+                           [psg.Text("Новый пароль"), psg.Input(size=(20, 1))]])]]
+
+    WINDOW_SIZE = (500, 500)
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.EVENT_FUNCS = {
+            "-BACK-": lambda: self.back(),
+        }
+
+    def back(self) -> None:
+        self.change_window(LoginForm())
 
 
 class LoginForm(TemplateForm):
@@ -400,8 +425,9 @@ class AdminForm(TemplateForm):
 
 if __name__ == "__main__":
     # form = UserForm(DataBase().get_user("root"))
-    form = AdminForm(DataBase().get_user("root"))
+    # form = AdminForm(DataBase().get_user("root"))
     # form = StartForm()
+    form = RecoveryForm()
 
     event_loop = asyncio.get_event_loop()
     asyncio.set_event_loop(event_loop)

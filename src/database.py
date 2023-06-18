@@ -79,6 +79,11 @@ class DataBase:
             cur.execute(f"SELECT * FROM users WHERE login='{user.login}' AND password='{user.password}'")
             return len(cur.fetchall()) != 0
 
+    def check_recovery_for_user(self, user: User, code: int) -> bool:
+        with self.connection.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute(f"SELECT * FROM users WHERE recovery_code={code} AND login={user.login}")
+            return len(cur.fetchall()) > 0
+
     def get_vacations_for_user(self, user: User) -> List[Vacation]:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
             cur.execute(f"SELECT * FROM vacations WHERE user_id={user._id}")
@@ -102,6 +107,8 @@ class DataBase:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
             cur.execute(f"SELECT * FROM posts WHERE name='{name}'")
             result = cur.fetchone()
+            if result is None:
+                return None
             return Post.from_sql(**result)
 
     def get_posts(self) -> Union[list[Post], None]:
@@ -109,6 +116,11 @@ class DataBase:
             cur.execute("SELECT * FROM posts")
             result = cur.fetchall()
             return [Post.from_sql(**data) for data in result]
+
+    def get_recovery_for_user(self, user: User) -> int:
+        with self.connection.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute(f"SELECT recovery_code FROM users WHERE login='{user.login}'")
+            return cur.fetchone[0]
 
     def get_user(self, user: Union[str, User]) -> Union[User, None]:
         if isinstance(user, User):
@@ -137,6 +149,14 @@ class DataBase:
             cur.execute(f"DELETE FROM vacations WHERE user_id='{user._id}'")
             if commit:
                 self.commit()
+
+    def set_recovery_for_user(self, user: User, code: int) -> None:
+        with self.connection.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute(f"UPDATE users SET recovery_code={code} WHERE login={user.login}")
+
+    def set_password_for_user(self, user: User, password: int) -> None:
+        with self.connection.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute(f"UPDATE users SET password={password} WHERE login={user.login}")
 
     def commit(self) -> None:
         self.connection.commit()

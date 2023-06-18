@@ -14,11 +14,12 @@ CREATE TABLE users (
   id serial,
   login text NOT NULL,
   password text NOT NULL,
-  first_name text NOT NULL,
-  second_name text NOT NULL,
-  surname text DEFAULT '',
-  post text NOT NULL REFERENCES posts (name) ON DELETE SET NULL,
+  first_name text,
+  second_name text,
+  surname text,
+  post text REFERENCES posts (name) ON DELETE SET NULL,
   role text DEFAULT 'user',
+  recovery_code integer,
   UNIQUE (login),
   PRIMARY KEY (id)
 );
