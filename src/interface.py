@@ -13,24 +13,28 @@ FONT_NAME = "Arial"
 
 
 class Theme:
-    background = "#27374D"
+    background_color = "#27374D"
     push_background = "#27374D"
     text_background = "#27374D"
     button_color = "#526D82"
     column_color = "#27374D"
+    unactive_tab_color = "#27374D"
+    unactive_tab_text_color = "#FFFFFF"
+    active_tab_color = "#DDE6ED"
+    active_tab_text_color = "#000000"
 
 
 class TemplateForm:
     LAYOUT = [[]]
-    BUTTON_FUNCS = {}
+    EVENT_FUNCS = {}
 
     WINDOW_SIZE = (200, 200)
     WINDOW_TIMEOUT = 500
 
     def __init__(self) -> None:
-        self.window = psg.Window("Vacations", deepcopy(self.LAYOUT), grab_anywhere=True, size=self.WINDOW_SIZE, finalize=True, background_color=Theme.background)
+        self.window = psg.Window("Vacations", deepcopy(self.LAYOUT), grab_anywhere=True, size=self.WINDOW_SIZE, finalize=True, background_color=Theme.background_color)
 
-        self.BUTTON_FUNCS = {}  # should be re-defined in __init__
+        self.EVENT_FUNCS = {}  # should be re-defined in __init__
 
     def main_loop(self) -> None:
         while True:
@@ -47,7 +51,7 @@ class TemplateForm:
 
         self.event = self.event.split("::")[-1:][0]  # bruh
 
-        tmp_func = self.BUTTON_FUNCS.get(self.event)
+        tmp_func = self.EVENT_FUNCS.get(self.event)
         if tmp_func is not None:
             tmp_func()
 
@@ -68,7 +72,7 @@ class StartForm(TemplateForm):
     def __init__(self) -> None:
         super().__init__()
 
-        self.BUTTON_FUNCS = {
+        self.EVENT_FUNCS = {
             "-LOGIN-": lambda: self.login(),
             "-REGISTER-": lambda: self.register(),
         }
@@ -94,7 +98,7 @@ class LoginForm(TemplateForm):
     def __init__(self) -> None:
         super().__init__()
 
-        self.BUTTON_FUNCS = {
+        self.EVENT_FUNCS = {
             "-BACK-": lambda: self.back(),
             "-LOG_IN-": lambda: self.login(),
         }
@@ -137,7 +141,7 @@ class RegisterForm(TemplateForm):
     def __init__(self) -> None:
         super().__init__()
 
-        self.BUTTON_FUNCS = {
+        self.EVENT_FUNCS = {
             "-BACK-": lambda: self.back(),
             "-REGISTER-": lambda: self.register()
         }
@@ -159,18 +163,17 @@ class RegisterForm(TemplateForm):
             psg.Popup("Заполните все необходимые поля", title="Ошибка")
             return
 
-        return_code = DataBase().register_user(tmp_user)
-
-        if return_code == 0:
-            self.change_window(UserForm(DataBase().get_user(tmp_user)))
-
-        elif return_code == 1:
+        if DataBase().user_exist(tmp_user):
             psg.Popup("Такой логин уже существует", title="Ошибка")
             return
 
-        elif return_code == 2:
+        if not (Verifier.username_is_valid(tmp_user.login)) or not (Verifier.password_is_valid(tmp_user.password)):
             psg.Popup("Логин или пароль не верны. Попробуйте использовать другие", title="Ошибка")
             return
+
+        DataBase().register_user(tmp_user)
+
+        self.change_window(UserForm(DataBase().get_user(tmp_user)))
 
 
 class UserForm(TemplateForm):
@@ -193,7 +196,7 @@ class UserForm(TemplateForm):
     def __init__(self, user: User) -> None:
         super().__init__()
 
-        self.BUTTON_FUNCS = {
+        self.EVENT_FUNCS = {
             "-BACK-": lambda: self.back(),
             "-ADD-": lambda: self.add(),
             "-DELETE-": lambda: self.delete(),
@@ -237,10 +240,6 @@ class UserForm(TemplateForm):
         self._update_vacations_list()
 
     def save(self) -> None:
-        tmp = DataBase()
-        tmp.delete_vacations_for_user(self.user)
-        result = 0
-
         if len(self.vacations) > len(self.user.post.max_vacations_length):
             psg.popup(f"Превышено максимум отпусков ({self.user.post.max_vacations_length})", title="Ошибка")
             return
@@ -255,21 +254,18 @@ class UserForm(TemplateForm):
                 psg.popup(f"Отпуск превышает масимальную длительность ({index1 + 1} max:{self.user.post.max_vacations_length[index1]})", title="Ошибка")
                 return
 
-        for index, vacation in enumerate(self.vacations):
-            result = tmp.add_vacation(self.user, vacation, index=index, commit=False)
-            if result != 0:
-                break
+            if len(DataBase().execute_sql(f"SELECT * FROM vacations WHERE start_date <= '{vacation.end_date}' AND end_date >= '{vacation.start_date}' AND user_id != {self.user._id}")) > 0:
+                psg.popup(f"Ваш отпуск пересекается с чужим ({index1 + 1})", title="Ошибка")
+                return
 
-        if result == 0:
-            tmp.commit()
-            psg.Popup("Успешно сохранено")
-            return
-        elif result == 1:
-            psg.popup(f"Дата начала отпуска не может быть меньше даты окончания ({index + 1})", title="Ошибка")
-            return
-        elif result == 2:
-            psg.popup(f"Ваш отпуск пересекается с чужим ({index + 1})", title="Ошибка")
-            return
+            if not Verifier.vacation_is_valid(vacation):
+                psg.popup(f"Дата начала отпуска не может быть меньше даты окончания ({index1 + 1})", title="Ошибка")
+                return
+
+        for vacation in self.vacations:
+            DataBase().add_vacation(self.user, vacation)
+        psg.Popup("Успешно сохранено")
+        return
 
     def delete(self) -> None:
         for selected_vacation in self.values["-VACATIONS_LIST-"]:
@@ -278,7 +274,128 @@ class UserForm(TemplateForm):
 
 
 class AdminForm(TemplateForm):
-    pass
+    LAYOUT = [[psg.Button("<", key="-BACK-", size=(2, 1), button_color=Theme.button_color), psg.Text("", key="-LOGINED_AS-", font=(FONT_NAME, 10, "bold"), background_color=Theme.text_background)],
+
+              [psg.TabGroup([
+                    [psg.Tab("Отпуски", [[psg.Column([[psg.CalendarButton("", key="-FIRST_DATE-", format="%d-%m-%Y", target=(psg.ThisRow, 0), close_when_date_chosen=False, button_color=Theme.button_color),
+                                                       psg.Text("-", font=(FONT_NAME, 10, "bold"), background_color=Theme.text_background),
+                                                       psg.CalendarButton("", key="-SECOND_DATE-", format="%d-%m-%Y", target=(psg.ThisRow, 2), close_when_date_chosen=False, button_color=Theme.button_color)],
+                                                      [psg.Push(background_color=Theme.column_color), psg.Button("Добавить", key="-ADD-", button_color=Theme.button_color)]], background_color=Theme.column_color),
+                                          psg.Push(background_color=Theme.push_background),
+                                          psg.Button("Удалить выделенный отпуск", key="-DELETE_VACATION-", button_color=Theme.button_color)],
+                                         [psg.Column([[psg.Listbox([], key="-USER_LIST-", size=(30), expand_y=True, enable_events=True), psg.Listbox([], key="-VACATIONS_LIST-", no_scrollbar=True, size=(50, 18))]],
+                                                     background_color=Theme.column_color)],
+                                         [psg.Push(background_color=Theme.column_color), psg.Button("Сохранить", key="-SAVE_VACATIONS-", button_color=Theme.button_color)]],
+                             background_color=Theme.background_color),
+
+                    #  psg.Tab("Должности", [[
+                    #                        psg.Text("heh", key="123")
+                    #                        ]])
+                     psg.Tab("Пользователи", [[psg.Listbox([])],
+                                              [psg.Column([[]])]])
+                     ]
+                            ], size=(750, 500),
+                            background_color=Theme.background_color,
+                            tab_background_color=Theme.unactive_tab_color,
+                            selected_background_color=Theme.active_tab_color,
+                            title_color=Theme.unactive_tab_text_color,
+                            selected_title_color=Theme.active_tab_text_color)
+               ]]
+
+    WINDOW_SIZE = (600, 500)
+
+    WINDOW_TIMEOUT = 100
+
+    def __init__(self, user: User) -> None:
+        super().__init__()
+
+        self.EVENT_FUNCS = {
+            "-BACK-": lambda: self.back(),
+            "-ADD-": lambda: self.add(),
+            "-DELETE_VACATION-": lambda: self.delete(),
+            "-SAVE_VACATIONS-": lambda: self.save_vacations(),
+            "-USER_LIST-": lambda: self._change_user(),
+        }
+
+        self.user = user
+
+        self.vacations = user.vacations
+        self.vacation_id = 100
+
+        self.window["-LOGINED_AS-"].update(f"Вы вошли как {self.user.login}")
+        self.window["-FIRST_DATE-"].update(datetime.date.today().strftime("%d/%m/%Y"))
+        self.window["-SECOND_DATE-"].update(datetime.date.today().strftime("%d/%m/%Y"))
+
+        self._update_vacations_list()
+        self._update_users_list()
+
+    def _update_vacations_list(self) -> None:
+        self.window["-VACATIONS_LIST-"].update([f"{index + 1}. {vacation.start_date.strftime('%d-%m-%Y')} - {vacation.end_date.strftime('%d-%m-%Y')}" for index, vacation in enumerate(self.vacations)])
+
+    def _update_users_list(self) -> None:
+        self.window["-USER_LIST-"].update([f"{user.login}" for user in DataBase().get_users()])
+
+    def _change_user(self) -> None:
+        self.user = DataBase().get_user(self.values["-USER_LIST-"][0])
+        self.vacations = self.user.vacations
+        self._update_vacations_list()
+
+    def _loop_step(self) -> None:
+        super()._loop_step()
+
+        print(self.event, self.values)
+
+        if self.values["-FIRST_DATE-"] != "":
+            self.window["-FIRST_DATE-"].update(self.values["-FIRST_DATE-"].replace("-", "/"))
+        if self.values["-SECOND_DATE-"] != "":
+            self.window["-SECOND_DATE-"].update(self.values["-SECOND_DATE-"].replace("-", "/"))
+
+    def back(self) -> None:
+        self.change_window(LoginForm())
+
+    def add(self) -> None:
+        if self.values["-FIRST_DATE-"] == "":
+            self.values["-FIRST_DATE-"] = datetime.datetime.now().strftime("%d-%m-%Y")
+
+        if self.values["-SECOND_DATE-"] == "":
+            self.values["-SECOND_DATE-"] = datetime.datetime.now().strftime("%d-%m-%Y")
+        self.vacations.append(Vacation(_id=self.vacation_id, start_date=datetime.datetime.strptime(self.values["-FIRST_DATE-"], "%d-%m-%Y").date(),
+                                       end_date=datetime.datetime.strptime(self.values["-SECOND_DATE-"], "%d-%m-%Y").date()))
+        self.vacation_id += 1
+        self._update_vacations_list()
+
+    def save_vacations(self) -> None:
+        if len(self.vacations) > len(self.user.post.max_vacations_length):
+            psg.popup(f"Превышено максимум отпусков ({self.user.post.max_vacations_length})", title="Ошибка")
+            return
+
+        for index1, vacation in enumerate(self.vacations):
+            for index2, tmp_vacation in enumerate(self.vacations):
+                if vacation._id != tmp_vacation._id and (vacation.start_date <= tmp_vacation.end_date and vacation.end_date >= tmp_vacation.start_date):
+                    psg.popup(f"Отпуски не могут пересекаться ({index1 + 1} и {index2 + 1})", title="Ошибка")
+                    return
+
+            if (vacation.end_date - vacation.start_date).days > self.user.post.max_vacations_length[index1]:
+                psg.popup(f"Отпуск превышает масимальную длительность ({index1 + 1} max:{self.user.post.max_vacations_length[index1]})", title="Ошибка")
+                return
+
+            if len(DataBase().execute_sql(f"SELECT * FROM vacations WHERE start_date <= '{vacation.end_date}' AND end_date >= '{vacation.start_date}' AND user_id != {self.user._id}")) > 0:
+                psg.popup(f"Ваш отпуск пересекается с чужим ({index1 + 1})", title="Ошибка")
+                return
+
+            if not Verifier.vacation_is_valid(vacation):
+                psg.popup(f"Дата начала отпуска не может быть меньше даты окончания ({index1 + 1})", title="Ошибка")
+                return
+
+        for vacation in self.vacations:
+            DataBase().add_vacation(self.user, vacation)
+        psg.Popup("Успешно сохранено")
+        return
+
+    def delete(self) -> None:
+        for selected_vacation in self.values["-VACATIONS_LIST-"]:
+            self.vacations.pop(int(selected_vacation.split(".")[0]) - 1)
+        self._update_vacations_list()
 
 
 if __name__ == "__main__":

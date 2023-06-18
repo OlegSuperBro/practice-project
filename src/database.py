@@ -1,5 +1,5 @@
 import psycopg2
-from psycopg2.extras import DictCursor
+from psycopg2.extras import DictCursor, DictRow
 from typing import List, Union
 import string
 
@@ -36,7 +36,7 @@ class Verifier:
         return True
 
     def vacation_is_valid(vacation: Vacation) -> bool:
-        if vacation.start_date > vacation.end_date:
+        if vacation.start_date >= vacation.end_date:
             return False
 
         return True
@@ -66,13 +66,7 @@ class DataBase:
             cur.execute(f"SELECT * FROM users WHERE login='{user.login}'")
             return len(cur.fetchall()) != 0
 
-    def register_user(self, user: User) -> int:
-        if self.user_exist(user):
-            return 1
-
-        if not (Verifier.username_is_valid(user.login)) or not (Verifier.password_is_valid(user.password)):
-            return 2
-
+    def register_user(self, user: User) -> None:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
             cur.execute("INSERT INTO users (login, password, first_name, second_name, surname, post, role) VALUES (%s, %s, %s, %s, %s, %s, %s)",
                         (user.login, user.password, user.first_name, user.second_name, user.surname, user.post.name, user.role))
@@ -87,7 +81,7 @@ class DataBase:
 
     def get_vacations_for_user(self, user: User) -> List[Vacation]:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
-            cur.execute(f"SELECT * FROM vacations WHERE user_id='{user._id}'")
+            cur.execute(f"SELECT * FROM vacations WHERE user_id={user._id}")
             result = cur.fetchall()
             return [Vacation.from_sql(**vacation) for vacation in result]
 
@@ -131,22 +125,12 @@ class DataBase:
             result = cur.fetchall()
             return [User.from_sql(**data, vacations=self.get_vacations_for_user(User(_id=data.get("id")))) for data in result]
 
-    def add_vacation(self, user: User, vacation: Vacation, index: int = 0, commit: bool = True) -> int:
-        if not Verifier.vacation_is_valid(vacation):
-            return 1
-
-        with self.connection.cursor(cursor_factory=DictCursor) as cur:
-            cur.execute(f"SELECT * FROM vacations WHERE start_date <={vacation.end_date} AND end_date >= {vacation.start_date} AND user_id!= {user._id}")
-            if not len(cur.fetchall()) > 0:
-                return 2
-
+    def add_vacation(self, user: User, vacation: Vacation, commit: bool = True) -> None:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
             cur.execute("INSERT INTO vacations (user_id, start_date, end_date) VALUES (%s, %s, %s)",
-                        (user._id, vacation.start_date, vacation.end_date))
+                        (user._id, vacation.start_date.strftime("%d/%m/%Y"), vacation.end_date.strftime("%d/%m/%Y")))
             if commit:
                 self.commit()
-
-        return 0
 
     def delete_vacations_for_user(self, user: User, commit: bool = True) -> None:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
@@ -157,9 +141,17 @@ class DataBase:
     def commit(self) -> None:
         self.connection.commit()
 
+    def execute_sql(self, command: str) -> List[DictRow]:
+        with self.connection.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute(command)
+            return cur.fetchall()
+
     def __delete__(self, instance):
         self.connection.close()
 
 
 if __name__ == "__main__":
-    print(DataBase().get_user("root"))
+    user = DataBase().get_user("root")
+    print(user)
+    vacations = DataBase().get_vacations_for_user(user)
+    print(vacations)
