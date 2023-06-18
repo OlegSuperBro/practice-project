@@ -83,7 +83,7 @@ class DataBase:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
             cur.execute(f"SELECT * FROM vacations WHERE user_id='{user._id}'")
             result = cur.fetchall()
-            return [Vacation.from_sql(vacation) for vacation in result]
+            return [Vacation.from_sql(**vacation) for vacation in result]
 
     def get_post(self, name: str) -> Union[Post, None]:
         """
@@ -123,6 +123,17 @@ class DataBase:
             cur.execute("SELECT * FROM users")
             result = cur.fetchall()
             return [User.from_sql(**data, vacations=self.get_vacations_for_user(User(_id=data.get("id")))) for data in result]
+
+    def add_vacation(self, user: User, vacation: Vacation) -> None:
+        with self.connection.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute("INSERT INTO vacations (user_id, start_date, end_date) VALUES (%s, %s, %s)",
+                        (user._id, vacation.start_date, vacation.end_date))
+            self.connection.commit()
+
+    def delete_vacations_for_user(self, user: User) -> None:
+        with self.connection.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute(f"DELETE FROM vacations WHERE user_id='{user._id}'")
+            self.connection.commit()
 
     def __delete__(self, instance):
         self.connection.close()

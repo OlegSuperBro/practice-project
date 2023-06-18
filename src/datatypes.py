@@ -13,9 +13,18 @@ class Vacation:
     def from_sql(**kwargs):
         tmp_vacation = Vacation()
         tmp_vacation._id = kwargs.get("id")
-        tmp_vacation.start_date = datetime.date.strftime(kwargs.get("start_date"), "%d-%m-%y")
-        tmp_vacation.end_date = datetime.date.strftime(kwargs.get("end_date"), "%d-%m-%y")
+        tmp_vacation.start_date = kwargs.get("start_date")
+        tmp_vacation.end_date = kwargs.get("end_date")
         return tmp_vacation
+
+    def __eq__(self, __value: object) -> bool:
+        if not isinstance(__value, Vacation):
+            return False
+
+        if self.start_date == __value.start_date and self.end_date == __value.end_date:
+            return True
+
+        return False
 
 
 @dataclass

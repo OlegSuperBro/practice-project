@@ -3,15 +3,7 @@ from pathlib import Path
 
 DEFAULT_CONFIG = \
 """
-minimal_password_length: 5
-banned_passwords:
-  - "12345"
-  - "1234567890"
-  - "qwerty"
 
-minimal_username_length: 1
-banned_usernames:
-  -
 """
 
 try:
