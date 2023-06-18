@@ -38,7 +38,7 @@ class Post:
         tmp_post = Post()
         tmp_post._id = kwargs.get("id")
         tmp_post.name = kwargs.get("name")
-        tmp_post.max_vacations_length = kwargs.get("max_vacations")
+        tmp_post.max_vacations_length = list(map(lambda x: int(x), kwargs.get("max_vacations").lstrip("(").rstrip(")").split(",")))
 
         return tmp_post
 

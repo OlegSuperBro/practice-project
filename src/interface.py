@@ -188,6 +188,8 @@ class UserForm(TemplateForm):
 
     WINDOW_SIZE = (350, 250)
 
+    WINDOW_TIMEOUT = 100
+
     def __init__(self, user: User) -> None:
         super().__init__()
 
@@ -201,37 +203,77 @@ class UserForm(TemplateForm):
         self.user = user
 
         self.vacations = user.vacations
+        self.vacation_id = 100
 
         self.window["-LOGINED_AS-"].update(f"Вы вошли как {self.user.login}")
-        self.window["-FIRST_DATE-"].update(f"{datetime.date.today().day}/{datetime.date.today().month}/{datetime.date.today().year}")
-        self.window["-SECOND_DATE-"].update(f"{datetime.date.today().day}/{datetime.date.today().month}/{datetime.date.today().year}")
+        self.window["-FIRST_DATE-"].update(datetime.date.today().strftime("%d/%m/%Y"))
+        self.window["-SECOND_DATE-"].update(datetime.date.today().strftime("%d/%m/%Y"))
 
         self._update_vacations_list()
 
     def _update_vacations_list(self) -> None:
-        self.window["-VACATIONS_LIST-"].update([f"{vacation.start_date.strftime('%d-%m-%Y')} - {vacation.end_date.strftime('%d-%m-%Y')}" for vacation in self.vacations])
+        self.window["-VACATIONS_LIST-"].update([f"{index + 1}. {vacation.start_date.strftime('%d-%m-%Y')} - {vacation.end_date.strftime('%d-%m-%Y')}" for index, vacation in enumerate(self.vacations)])
+
+    def _loop_step(self) -> None:
+        super()._loop_step()
+
+        if self.values["-FIRST_DATE-"] != "":
+            self.window["-FIRST_DATE-"].update(self.values["-FIRST_DATE-"].replace("-", "/"))
+        if self.values["-SECOND_DATE-"] != "":
+            self.window["-SECOND_DATE-"].update(self.values["-SECOND_DATE-"].replace("-", "/"))
 
     def back(self) -> None:
         self.change_window(LoginForm())
 
     def add(self) -> None:
-        self.vacations.append(Vacation(start_date=datetime.datetime.strptime(self.values["-FIRST_DATE-"], "%d-%m-%Y").date(),
+        if self.values["-FIRST_DATE-"] == "":
+            self.values["-FIRST_DATE-"] = datetime.datetime.now().strftime("%d-%m-%Y")
+
+        if self.values["-SECOND_DATE-"] == "":
+            self.values["-SECOND_DATE-"] = datetime.datetime.now().strftime("%d-%m-%Y")
+        self.vacations.append(Vacation(_id=self.vacation_id, start_date=datetime.datetime.strptime(self.values["-FIRST_DATE-"], "%d-%m-%Y").date(),
                                        end_date=datetime.datetime.strptime(self.values["-SECOND_DATE-"], "%d-%m-%Y").date()))
+        self.vacation_id += 1
         self._update_vacations_list()
 
     def save(self) -> None:
         tmp = DataBase()
         tmp.delete_vacations_for_user(self.user)
-        for vacation in self.vacations:
-            tmp.add_vacation(self.user, vacation)
+        result = 0
+
+        if len(self.vacations) > len(self.user.post.max_vacations_length):
+            psg.popup(f"Превышено максимум отпусков ({self.user.post.max_vacations_length})", title="Ошибка")
+            return
+
+        for index1, vacation in enumerate(self.vacations):
+            for index2, tmp_vacation in enumerate(self.vacations):
+                if vacation._id != tmp_vacation._id and (vacation.start_date <= tmp_vacation.end_date and vacation.end_date >= tmp_vacation.start_date):
+                    psg.popup(f"Отпуски не могут пересекаться ({index1 + 1} и {index2 + 1})", title="Ошибка")
+                    return
+
+            if (vacation.end_date - vacation.start_date).days > self.user.post.max_vacations_length[index1]:
+                psg.popup(f"Отпуск превышает масимальную длительность ({index1 + 1} max:{self.user.post.max_vacations_length[index1]})", title="Ошибка")
+                return
+
+        for index, vacation in enumerate(self.vacations):
+            result = tmp.add_vacation(self.user, vacation, index=index, commit=False)
+            if result != 0:
+                break
+
+        if result == 0:
+            tmp.commit()
+            psg.Popup("Успешно сохранено")
+            return
+        elif result == 1:
+            psg.popup(f"Дата начала отпуска не может быть меньше даты окончания ({index + 1})", title="Ошибка")
+            return
+        elif result == 2:
+            psg.popup(f"Ваш отпуск пересекается с чужим ({index + 1})", title="Ошибка")
+            return
 
     def delete(self) -> None:
         for selected_vacation in self.values["-VACATIONS_LIST-"]:
-            tmp_vacation = Vacation(start_date=datetime.datetime.strptime(selected_vacation.split(" - ")[0], "%d-%m-%Y").date(),
-                                    end_date=datetime.datetime.strptime(selected_vacation.split(" - ")[1], "%d-%m-%Y").date())
-            for vacation in self.vacations:
-                if vacation == tmp_vacation:
-                    self.vacations.remove(vacation)
+            self.vacations.pop(int(selected_vacation.split(".")[0]) - 1)
         self._update_vacations_list()
 
 
@@ -240,7 +282,8 @@ class AdminForm(TemplateForm):
 
 
 if __name__ == "__main__":
-    form = UserForm(DataBase().get_user("root"))
+    # form = UserForm(DataBase().get_user("root"))
+    form = AdminForm(DataBase().get_user("root"))
     # form = StartForm()
 
     event_loop = asyncio.get_event_loop()

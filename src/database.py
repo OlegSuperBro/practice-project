@@ -9,7 +9,7 @@ from config import CONFIG
 
 class Verifier:
     @staticmethod
-    def password_is_valid(password: str):
+    def password_is_valid(password: str) -> bool:
         if len(password) < CONFIG.minimal_password_length:
             return False
 
@@ -23,7 +23,7 @@ class Verifier:
         return True
 
     @staticmethod
-    def username_is_valid(username: str):
+    def username_is_valid(username: str) -> bool:
         if len(username) < CONFIG.minimal_username_length:
             return False
         if username in CONFIG.banned_usernames:
@@ -31,6 +31,12 @@ class Verifier:
 
         # check if username using only english letters and ascii symbols
         if not all([x in string.printable[:-6] for x in username]):
+            return False
+
+        return True
+
+    def vacation_is_valid(vacation: Vacation) -> bool:
+        if vacation.start_date > vacation.end_date:
             return False
 
         return True
@@ -116,6 +122,7 @@ class DataBase:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
             cur.execute(f"SELECT * FROM users WHERE login='{user}'")
             result = cur.fetchone()
+            result["post"] = self.get_post(result.get("post"))
             return User.from_sql(**result, vacations=self.get_vacations_for_user(User(_id=result.get("id"))))
 
     def get_users(self) -> Union[List[User], None]:
@@ -124,20 +131,35 @@ class DataBase:
             result = cur.fetchall()
             return [User.from_sql(**data, vacations=self.get_vacations_for_user(User(_id=data.get("id")))) for data in result]
 
-    def add_vacation(self, user: User, vacation: Vacation) -> None:
+    def add_vacation(self, user: User, vacation: Vacation, index: int = 0, commit: bool = True) -> int:
+        if not Verifier.vacation_is_valid(vacation):
+            return 1
+
+        with self.connection.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute(f"SELECT * FROM vacations WHERE start_date <={vacation.end_date} AND end_date >= {vacation.start_date} AND user_id!= {user._id}")
+            if not len(cur.fetchall()) > 0:
+                return 2
+
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
             cur.execute("INSERT INTO vacations (user_id, start_date, end_date) VALUES (%s, %s, %s)",
                         (user._id, vacation.start_date, vacation.end_date))
-            self.connection.commit()
+            if commit:
+                self.commit()
 
-    def delete_vacations_for_user(self, user: User) -> None:
+        return 0
+
+    def delete_vacations_for_user(self, user: User, commit: bool = True) -> None:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
             cur.execute(f"DELETE FROM vacations WHERE user_id='{user._id}'")
-            self.connection.commit()
+            if commit:
+                self.commit()
+
+    def commit(self) -> None:
+        self.connection.commit()
 
     def __delete__(self, instance):
         self.connection.close()
 
 
 if __name__ == "__main__":
-    print(DataBase().get_users())
+    print(DataBase().get_user("root"))
