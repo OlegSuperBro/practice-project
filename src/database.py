@@ -1,6 +1,7 @@
 import psycopg2
 from psycopg2.extras import DictCursor
 from typing import List, Union
+import string
 
 from datatypes import User, Vacation, Post
 from config import CONFIG
@@ -11,7 +12,12 @@ class Verifier:
     def password_is_valid(password: str):
         if len(password) < CONFIG.minimal_password_length:
             return False
+
         if password in CONFIG.banned_passwords:
+            return False
+
+        # check if password using only english letters and ascii symbols
+        if not all([x in string.printable[:-6] for x in password]):
             return False
 
         return True
@@ -21,6 +27,10 @@ class Verifier:
         if len(username) < CONFIG.minimal_username_length:
             return False
         if username in CONFIG.banned_usernames:
+            return False
+
+        # check if username using only english letters and ascii symbols
+        if not all([x in string.printable[:-6] for x in username]):
             return False
 
         return True
@@ -47,22 +57,20 @@ class DataBase:
 
     def user_exist(self, user: User):
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
-            cur.execute(f"SELECT * FROM users WHERE login={user.login}")
+            cur.execute(f"SELECT * FROM users WHERE login='{user.login}'")
             return len(cur.fetchall()) != 0
 
     def register_user(self, user: User) -> int:
         if self.user_exist(user):
             return 1
 
-        if Verifier.username_is_valid(user.login):
+        if not (Verifier.username_is_valid(user.login)) or not (Verifier.password_is_valid(user.password)):
             return 2
-
-        if Verifier.password_is_valid(user.password):
-            return 3
 
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
             cur.execute("INSERT INTO users (login, password, first_name, second_name, surname, post, role) VALUES (%s, %s, %s, %s, %s, %s, %s)",
                         (user.login, user.password, user.first_name, user.second_name, user.surname, user.post.name, user.role))
+            self.connection.commit()
 
         return 0
 
@@ -74,9 +82,8 @@ class DataBase:
     def get_vacations_for_user(self, user: User) -> List[Vacation]:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
             cur.execute(f"SELECT * FROM vacations WHERE user_id='{user._id}'")
-            if cur.fetchall() == []:
-                return None
-            return [Vacation.from_sql(vacation) for vacation in cur.fetchall()]
+            result = cur.fetchall()
+            return [Vacation.from_sql(vacation) for vacation in result]
 
     def get_post(self, name: str) -> Union[Post, None]:
         """
@@ -94,9 +101,14 @@ class DataBase:
         """
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
             cur.execute(f"SELECT * FROM posts WHERE name='{name}'")
-            if cur.fetchall() == []:
-                return None
-            return Post(**cur.fetchone())
+            result = cur.fetchone()
+            return Post.from_sql(**result)
+
+    def get_posts(self) -> Union[list[Post], None]:
+        with self.connection.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute("SELECT * FROM posts")
+            result = cur.fetchall()
+            return [Post.from_sql(**data) for data in result]
 
     def get_user(self, user: Union[str, User]) -> Union[User, None]:
         if isinstance(user, User):
@@ -104,9 +116,17 @@ class DataBase:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
             cur.execute(f"SELECT * FROM users WHERE login='{user}'")
             result = cur.fetchone()
-            if result is None:
-                return None
             return User.from_sql(**result, vacations=self.get_vacations_for_user(User(_id=result.get("id"))))
+
+    def get_users(self) -> Union[List[User], None]:
+        with self.connection.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute("SELECT * FROM users")
+            result = cur.fetchall()
+            return [User.from_sql(**data, vacations=self.get_vacations_for_user(User(_id=data.get("id")))) for data in result]
 
     def __delete__(self, instance):
         self.connection.close()
+
+
+if __name__ == "__main__":
+    print(DataBase().get_users())

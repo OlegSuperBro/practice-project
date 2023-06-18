@@ -1,9 +1,10 @@
 import PySimpleGUI as psg
 import asyncio
 from typing import Self
+from copy import deepcopy
 
 from database import DataBase, Verifier
-from datatypes import User
+from datatypes import User, Post
 
 
 FONT_NAME = "Arial"
@@ -17,7 +18,7 @@ class TemplateForm:
     WINDOW_TIMEOUT = 500
 
     def __init__(self) -> None:
-        self.window = psg.Window("Vacations", self.LAYOUT, grab_anywhere=True, size=self.WINDOW_SIZE)
+        self.window = psg.Window("Vacations", deepcopy(self.LAYOUT), grab_anywhere=True, size=self.WINDOW_SIZE)
 
         self.BUTTON_FUNCS = {}  # should be re-defined in __init__
 
@@ -66,15 +67,15 @@ class StartForm(TemplateForm):
         self.change_window(LoginForm())
 
     def register(self):
-        pass
+        self.change_window(RegisterForm())
 
 
 class LoginForm(TemplateForm):
-    LAYOUT = [[psg.Button("<", key="-RETURN-", size=(2, 1)), psg.VPush()],
+    LAYOUT = [[psg.Button("<", key="-BACK-", size=(2, 1)), psg.VPush()],
               [psg.Push(), psg.Text("Логин", font=(FONT_NAME, 20, "bold")), psg.Push()],
-              [psg.Push(), psg.Input("", key="-LOGIN-", size=(20, 2)), psg.Push()],
+              [psg.Push(), psg.Input("", key="-LOGIN-", size=(20, 1)), psg.Push()],
               [psg.Push(), psg.Text("Пароль", font=(FONT_NAME, 20, "bold")), psg.Push()],
-              [psg.Push(), psg.Input("", key="-PASSWORD-", size=(20, 2)), psg.Push()],
+              [psg.Push(), psg.Input("", key="-PASSWORD-", size=(20, 1), password_char="*"), psg.Push()],
               [psg.Push(), psg.Button("Вход", key="-LOG_IN-", size=(20, 1), font=(FONT_NAME, 15, "bold")), psg.Push()],
               [psg.VPush()]]
 
@@ -84,6 +85,7 @@ class LoginForm(TemplateForm):
         super().__init__()
 
         self.BUTTON_FUNCS = {
+            "-BACK-": lambda: self.back(),
             "-LOG_IN-": lambda: self.login(),
         }
 
@@ -99,6 +101,65 @@ class LoginForm(TemplateForm):
             return
         else:
             self.change_window(UserForm(DataBase().get_user(tmp_user)))
+            return
+
+    def back(self) -> None:
+        self.change_window(StartForm())
+
+
+class RegisterForm(TemplateForm):
+    LAYOUT = [[psg.Button("<", key="-BACK-", size=(2, 1)), psg.VPush()],
+              [psg.Push(), psg.Column([[psg.Text("Фамилия", font=(FONT_NAME, 20, "bold"))], [psg.Input("", key="-FIRST_NAME-", size=(20, 1))]]),
+               psg.Push(), psg.Column([[psg.Text("Имя", font=(FONT_NAME, 20, "bold"))], [psg.Input("", key="-SECOND_NAME-", size=(20, 1))]]), psg.Push()],
+
+              [psg.Push(), psg.Column([[psg.Text("Отчество", font=(FONT_NAME, 20, "bold"))], [psg.Input("", key="-SURNAME-", size=(20, 1))]]),
+               psg.Push(), psg.Column([[psg.Text("Должность", font=(FONT_NAME, 20, "bold"))], [psg.Combo([post.name.capitalize() for post in DataBase().get_posts()], key="-POST-", size=(18, 1), readonly=True)]]), psg.Push()],
+
+              [psg.Push(), psg.Column([[psg.Text("Логин", font=(FONT_NAME, 20, "bold"))],
+                                       [psg.Input("", key="-LOGIN-", size=(20, 1))],
+                                       [psg.Text("Пароль", font=(FONT_NAME, 20, "bold"))],
+                                       [psg.Input("", key="-PASSWORD-", size=(20, 1), password_char="*  ")]]),
+               psg.Push(), psg.vbottom(psg.Button("Регистрация", key="-REGISTER-", size=(20, 1), font=(FONT_NAME, 10, "bold"))), psg.Push()],
+              [psg.VPush()]]
+
+    WINDOW_SIZE = (400, 400)
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.BUTTON_FUNCS = {
+            "-BACK-": lambda: self.back(),
+            "-REGISTER-": lambda: self.register()
+        }
+
+    def back(self) -> None:
+        self.change_window(StartForm())
+
+    def register(self) -> None:
+        tmp_user = User()
+
+        tmp_user.first_name = self.values.get("-FIRST_NAME-")
+        tmp_user.second_name = self.values.get("-SECOND_NAME-")
+        tmp_user.surname = self.values.get("-SURNAME-")
+        tmp_user.post = Post(name=self.values.get("-POST-").lower())
+        tmp_user.login = self.values.get("-LOGIN-")
+        tmp_user.password = self.values.get("-PASSWORD-")
+
+        if not (tmp_user.first_name != "" and tmp_user.second_name != "" and tmp_user.post.name != "" and tmp_user.login != "" and tmp_user.password != ""):
+            psg.Popup("Заполните все необходимые поля", title="Ошибка")
+            return
+
+        return_code = DataBase().register_user(tmp_user)
+
+        if return_code == 0:
+            self.change_window(UserForm(DataBase().get_user(tmp_user)))
+
+        elif return_code == 1:
+            psg.Popup("Такой логин уже существует", title="Ошибка")
+            return
+
+        elif return_code == 2:
+            psg.Popup("Логин или пароль не верны. Попробуйте использовать другие", title="Ошибка")
             return
 
 

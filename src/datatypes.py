@@ -22,7 +22,16 @@ class Vacation:
 class Post:
     _id: int = 0
     name: str = ""
-    max_holidays_length: List[int] = field(default_factory=list)  # for each new holiday add new number. For example (1, 5, 3) will allow for this post 3 holidays with length 1, 5 ,3
+    max_vacations_length: List[int] = field(default_factory=list)  # for each new holiday add new number. For example (1, 5, 3) will allow for this post 3 holidays with length 1, 5 ,3
+
+    @staticmethod
+    def from_sql(**kwargs):
+        tmp_post = Post()
+        tmp_post._id = kwargs.get("id")
+        tmp_post.name = kwargs.get("name")
+        tmp_post.max_vacations_length = kwargs.get("max_vacations")
+
+        return tmp_post
 
 
 @dataclass
