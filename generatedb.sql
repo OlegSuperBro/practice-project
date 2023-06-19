@@ -5,7 +5,8 @@ DROP TABLE IF EXISTS posts;
 CREATE TABLE posts (
   id serial,
   name text,
-  max_vacations text,
+  max_vacations_length text,
+  max_total_vacations integer,
   UNIQUE (name),
   PRIMARY KEY (id)
 );

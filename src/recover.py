@@ -44,5 +44,5 @@ def create_recovery_code(user: User) -> int:
 
 if __name__ == "__main__":
     # print(create_recovery_code(DataBase().get_user("root")))
-    print(create_recovery_text("root").encode("cp1251", "ignore").decode("cp1251"))
-    send_recovery_email(create_recovery_text("root"), "olegrakovic323@gmail.com")
+    print(create_recovery_text("root"))
+    send_recovery_email(create_recovery_text("root"))

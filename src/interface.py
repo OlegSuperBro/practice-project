@@ -1,5 +1,4 @@
 import PySimpleGUI as psg
-import asyncio
 import datetime
 import sys
 from typing import Self
@@ -13,6 +12,10 @@ from recover import send_recovery_email, create_recovery_code, create_recovery_t
 FONT_NAME = "Arial"
 
 
+# 27374D
+# 526D82
+# 9DB2BF
+# DDE6ED
 class Theme:
     background_color = "#27374D"
     push_background = "#27374D"
@@ -147,8 +150,6 @@ class RecoveryForm(TemplateForm):
         login = self.values["-CODE_LOGIN-"]
         password = self.values["-CODE_PASSWORD-"]
         code = self.values["-CODE-"]
-        
-        
 
         if not (Verifier.username_is_valid(login) and Verifier.password_is_valid(password)):
             psg.Popup("Данные не допустимы")
@@ -190,15 +191,15 @@ class LoginForm(TemplateForm):
     def login(self) -> None:
         tmp_user = User(login=self.values.get("-LOGIN-"), password=self.values.get("-PASSWORD-"))
 
-        if not (Verifier.username_is_valid(tmp_user.login)) or not (Verifier.password_is_valid(tmp_user.password)):
-            psg.popup("Недопустимые данные", title="Ошибка")
-            return
-
         if not DataBase().login_user(tmp_user):
             psg.popup("Неверные данные", title="Ошибка")
             return
         else:
-            self.change_window(UserForm(DataBase().get_user(tmp_user)))
+            user = DataBase().get_user(tmp_user)
+            if user.role == "admin":
+                self.change_window(AdminForm(user))
+            elif user.role == "user":
+                self.change_window(UserForm(user))
             return
 
     def forget_password(self):
@@ -298,9 +299,9 @@ class UserForm(TemplateForm):
         self.window["-FIRST_DATE-"].update(datetime.date.today().strftime("%d/%m/%Y"))
         self.window["-SECOND_DATE-"].update(datetime.date.today().strftime("%d/%m/%Y"))
 
-        self._update_vacations_list()
+        self.update_vacations_list()
 
-    def _update_vacations_list(self) -> None:
+    def update_vacations_list(self) -> None:
         self.window["-VACATIONS_LIST-"].update([f"{index + 1}. {vacation.start_date.strftime('%d-%m-%Y')} - {vacation.end_date.strftime('%d-%m-%Y')}" for index, vacation in enumerate(self.vacations)])
 
     def _loop_step(self) -> None:
@@ -323,7 +324,7 @@ class UserForm(TemplateForm):
         self.vacations.append(Vacation(_id=self.vacation_id, start_date=datetime.datetime.strptime(self.values["-FIRST_DATE-"], "%d-%m-%Y").date(),
                                        end_date=datetime.datetime.strptime(self.values["-SECOND_DATE-"], "%d-%m-%Y").date()))
         self.vacation_id += 1
-        self._update_vacations_list()
+        self.update_vacations_list()
 
     def save(self) -> None:
         if len(self.vacations) > len(self.user.post.max_vacations_length):
@@ -357,7 +358,7 @@ class UserForm(TemplateForm):
     def delete(self) -> None:
         for selected_vacation in self.values["-VACATIONS_LIST-"]:
             self.vacations.pop(int(selected_vacation.split(".")[0]) - 1)
-        self._update_vacations_list()
+        self.update_vacations_list()
 
 
 class AdminForm(TemplateForm):
@@ -375,13 +376,13 @@ class AdminForm(TemplateForm):
                                          [psg.Push(background_color=Theme.column_color), psg.Button("Сохранить", key="-SAVE_VACATIONS-", button_color=Theme.button_color)]],
                              background_color=Theme.background_color),
 
-                    #  psg.Tab("Должности", [[
-                    #                        psg.Text("heh", key="123")
-                    #                        ]])
-                     psg.Tab("Пользователи", [[psg.Listbox([])],
-                                              [psg.Column([[]])]])
+                     psg.Tab("Пользователи", [[psg.Column([[psg.Button("Удалить", key="-DELETE_USER-", button_color=Theme.button_color)]], background_color=Theme.column_color)],
+                                              [psg.Table([[]], headings=["Логин", "ФИО", "Должность"], key="-FULL_USER_TABLE-", expand_x=True,  expand_y=True)]],
+                             background_color=Theme.background_color)
                      ]
-                            ], size=(750, 500),
+                            ],
+                            expand_x=True,
+                            expand_y=True,
                             background_color=Theme.background_color,
                             tab_background_color=Theme.unactive_tab_color,
                             selected_background_color=Theme.active_tab_color,
@@ -398,10 +399,11 @@ class AdminForm(TemplateForm):
 
         self.EVENT_FUNCS = {
             "-BACK-": lambda: self.back(),
-            "-ADD-": lambda: self.add(),
-            "-DELETE_VACATION-": lambda: self.delete(),
-            "-SAVE_VACATIONS-": lambda: self.save_vacations(),
-            "-USER_LIST-": lambda: self._change_user(),
+            "-ADD-": lambda: self.vacations_add(),
+            "-DELETE_VACATION-": lambda: self.vacations_delete(),
+            "-SAVE_VACATIONS-": lambda: self.vacations_save(),
+            "-USER_LIST-": lambda: self.vacations_change_user(),
+            "-DELETE_USER-": lambda: self.users_delete_user(),
         }
 
         self.user = user
@@ -413,34 +415,22 @@ class AdminForm(TemplateForm):
         self.window["-FIRST_DATE-"].update(datetime.date.today().strftime("%d/%m/%Y"))
         self.window["-SECOND_DATE-"].update(datetime.date.today().strftime("%d/%m/%Y"))
 
-        self._update_vacations_list()
-        self._update_users_list()
+        self.vacations_update_list()
+        self.vacations_update_users_list()
+        self.users_update_table()
 
-    def _update_vacations_list(self) -> None:
+    def vacations_update_list(self) -> None:
         self.window["-VACATIONS_LIST-"].update([f"{index + 1}. {vacation.start_date.strftime('%d-%m-%Y')} - {vacation.end_date.strftime('%d-%m-%Y')}" for index, vacation in enumerate(self.vacations)])
 
-    def _update_users_list(self) -> None:
+    def vacations_update_users_list(self) -> None:
         self.window["-USER_LIST-"].update([f"{user.login}" for user in DataBase().get_users()])
 
-    def _change_user(self) -> None:
+    def vacations_change_user(self) -> None:
         self.user = DataBase().get_user(self.values["-USER_LIST-"][0])
         self.vacations = self.user.vacations
-        self._update_vacations_list()
+        self.vacations_update_list()
 
-    def _loop_step(self) -> None:
-        super()._loop_step()
-
-        print(self.event, self.values)
-
-        if self.values["-FIRST_DATE-"] != "":
-            self.window["-FIRST_DATE-"].update(self.values["-FIRST_DATE-"].replace("-", "/"))
-        if self.values["-SECOND_DATE-"] != "":
-            self.window["-SECOND_DATE-"].update(self.values["-SECOND_DATE-"].replace("-", "/"))
-
-    def back(self) -> None:
-        self.change_window(LoginForm())
-
-    def add(self) -> None:
+    def vacations_add(self) -> None:
         if self.values["-FIRST_DATE-"] == "":
             self.values["-FIRST_DATE-"] = datetime.datetime.now().strftime("%d-%m-%Y")
 
@@ -449,9 +439,9 @@ class AdminForm(TemplateForm):
         self.vacations.append(Vacation(_id=self.vacation_id, start_date=datetime.datetime.strptime(self.values["-FIRST_DATE-"], "%d-%m-%Y").date(),
                                        end_date=datetime.datetime.strptime(self.values["-SECOND_DATE-"], "%d-%m-%Y").date()))
         self.vacation_id += 1
-        self._update_vacations_list()
+        self.vacations_update_list()
 
-    def save_vacations(self) -> None:
+    def vacations_save(self) -> None:
         if len(self.vacations) > len(self.user.post.max_vacations_length):
             psg.popup(f"Превышено максимум отпусков ({len(self.user.post.max_vacations_length)})", title="Ошибка")
             return
@@ -480,21 +470,51 @@ class AdminForm(TemplateForm):
         psg.Popup("Успешно сохранено")
         return
 
-    def delete(self) -> None:
+    def vacations_delete(self) -> None:
         for selected_vacation in self.values["-VACATIONS_LIST-"]:
             self.vacations.pop(int(selected_vacation.split(".")[0]) - 1)
-        self._update_vacations_list()
+        self.vacations_update_list()
+
+    def users_update_table(self) -> None:
+        self.window["-FULL_USER_TABLE-"].update([[f"{user.login}",
+                                                  f"{user.first_name if user.first_name is not None else ''} {user.second_name if user.second_name is not None else ''} {user.surname if user.second_name is not None else ''}",
+                                                  f"{user.post.name.capitalize() if user.post is not None else ''}"]
+                                                 for user in DataBase().get_users()])
+
+    def _users_get_selected_user(self) -> User:
+        if self.values["-FULL_USER_TABLE-"] == []:
+            return None
+        return DataBase().get_user(self.window["-FULL_USER_TABLE-"].Values[self.values["-FULL_USER_TABLE-"][0]][0])
+
+    def users_generate_recovery_code(self) -> None:
+        pass
+
+    def users_delete_user(self) -> None:
+        user = self._users_get_selected_user()
+        if user is None:
+            return
+        if user.role == "admin":
+            psg.popup("Невозможно удалить администратора", title="Ошибка")
+            return
+        DataBase().delete_user(user)
+        self.users_update_table()
+
+    def _loop_step(self) -> None:
+        super()._loop_step()
+
+        if self.values["-FIRST_DATE-"] != "":
+            self.window["-FIRST_DATE-"].update(self.values["-FIRST_DATE-"].replace("-", "/"))
+        if self.values["-SECOND_DATE-"] != "":
+            self.window["-SECOND_DATE-"].update(self.values["-SECOND_DATE-"].replace("-", "/"))
+
+    def back(self) -> None:
+        self.change_window(LoginForm())
 
 
 if __name__ == "__main__":
     # form = UserForm(DataBase().get_user("root"))
-    # form = AdminForm(DataBase().get_user("root"))
-    form = StartForm()
+    form = AdminForm(DataBase().get_user("root"))
+    # form = StartForm()
     # form = RecoveryForm()
 
-    event_loop = asyncio.get_event_loop()
-    asyncio.set_event_loop(event_loop)
-
-    event_loop.create_task(form._start())
-
-    event_loop.run_forever()
+    form.main_loop()

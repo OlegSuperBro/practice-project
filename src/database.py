@@ -216,6 +216,13 @@ class DataBase:
             if commit:
                 self.commit()
 
+    def delete_user(self, user: User, commit: bool = True) -> None:
+        self.delete_vacations_for_user(user, commit)
+        with self.connection.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute(f"DELETE FROM users WHERE login='{user.login}'")
+            if commit:
+                self.commit()
+
     def set_recovery_for_user(self, user: User, code: int, commit: bool = True) -> None:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
             cur.execute(f"UPDATE users SET recovery_code={code} WHERE login='{user.login}'")
