@@ -8,7 +8,7 @@ from copy import deepcopy
 
 from database import DataBase, Verifier
 from datatypes import User, Post, Vacation
-from recover import send_email, create_recovery_code
+from recover import send_recovery_email, create_recovery_code, create_recovery_text
 
 
 FONT_NAME = "Arial"
@@ -67,7 +67,7 @@ class StartForm(TemplateForm):
     LAYOUT = [[psg.VPush(background_color=Theme.push_background)],
               [psg.Push(background_color=Theme.push_background), psg.Button("Вход", key="-LOGIN-", size=(25, 1), font=(FONT_NAME, 20, "bold")), psg.Push(background_color=Theme.push_background)],
               [psg.Push(background_color=Theme.push_background), psg.Button("Регистрация", key="-REGISTER-", size=(25, 1), font=(FONT_NAME, 20, "bold")), psg.Push(background_color=Theme.push_background)],
-              [psg.Push(background_color=Theme.push_background), psg.Button("Экспортировать все отпуски", key="-SHOW_VACATIONS-", size=(25, 1), font=(FONT_NAME, 9, "bold")), psg.Push(background_color=Theme.push_background)],
+              [psg.Push(background_color=Theme.push_background), psg.Button("Экспортировать все отпуски", key="-EXPORT_VACATIONS-", size=(25, 1), font=(FONT_NAME, 9, "bold")), psg.Push(background_color=Theme.push_background)],
               [psg.VPush(background_color=Theme.push_background)]]
 
     WINDOW_SIZE = (225, 175)
@@ -78,7 +78,7 @@ class StartForm(TemplateForm):
         self.EVENT_FUNCS = {
             "-LOGIN-": lambda: self.login(),
             "-REGISTER-": lambda: self.register(),
-            "-SHOW_VACATIONS-": lambda: self.export_vacations()
+            "-EXPORT_VACATIONS-": lambda: self.export_vacations()
         }
 
     def login(self):
@@ -113,14 +113,14 @@ class StartForm(TemplateForm):
 
 class RecoveryForm(TemplateForm):
     LAYOUT = [[psg.Button("<", key="-BACK-", size=(2, 1), button_color=Theme.button_color)],
-              [psg.Column([[psg.Text("Если вы забыли пароль, то можете отправить запрос на востановление.")],
-                           [psg.Text("Логин"), psg.Input(size=(20, 1))],
-                           [psg.Text("Добавить дополнительную информацию (например почту для контакта)")],
-                           [psg.Multiline(size=(40, 5))],
-                           [psg.Push(), psg.Button("Отправить запрос")],
-                           [psg.Text("Если у вас уже есть код введите его")],
-                           [psg.Text("Логин"), psg.Input(size=(20, 1)), psg.Text("Код"), psg.Input(size=(10, 1))],
-                           [psg.Text("Новый пароль"), psg.Input(size=(20, 1))]])]]
+              [psg.Text("Если вы забыли пароль, то можете отправить запрос на востановление. (старый код перестанет действовать)", background_color=Theme.text_background)],
+              [psg.Text("Логин", background_color=Theme.text_background), psg.Input(size=(20, 1), key="-REQUEST_LOGIN-")],
+              [psg.Text("Добавить дополнительную информацию (например почту для контакта)", background_color=Theme.text_background)],
+              [psg.Multiline(size=(40, 5), key="-ADDITIONAL_INFO-")],
+              [psg.Push(background_color=Theme.push_background), psg.Button("Отправить запрос", key="-SEND_REQUEST-", button_color=Theme.button_color)],
+              [psg.Text("Если у вас уже есть код введите его", background_color=Theme.text_background)],
+              [psg.Text("Логин", background_color=Theme.text_background), psg.Input(size=(20, 1), key="-CODE_LOGIN-"), psg.Text("Код", background_color=Theme.text_background), psg.Input(size=(10, 1), key="-CODE-")],
+              [psg.Text("Новый пароль", background_color=Theme.text_background), psg.Input(size=(20, 1), key="-CODE_PASSWORD-"), psg.Button("Изменить пароль", key="-CHANGE_PASSWORD-", button_color=Theme.button_color)]]
 
     WINDOW_SIZE = (500, 500)
 
@@ -129,10 +129,46 @@ class RecoveryForm(TemplateForm):
 
         self.EVENT_FUNCS = {
             "-BACK-": lambda: self.back(),
+            "-SEND_REQUEST-": lambda: self.send_request(),
+            "-CHANGE_PASSWORD-": lambda: self.change_password(),
         }
 
     def back(self) -> None:
         self.change_window(LoginForm())
+
+    def send_request(self):
+        login = self.values["-REQUEST_LOGIN-"]
+        if not Verifier.username_is_valid(login):
+            psg.Popup("Данный логин не допустим")
+            return
+        if not DataBase().user_exist(login):
+            psg.Popup("Данного пользователя не существует")
+            return
+
+        create_recovery_code(DataBase().get_user(login))
+        send_recovery_email(create_recovery_text(DataBase().get_user(login)))
+        psg.popup("Запрос отправлен успешно")
+
+    def change_password(self):
+        login = self.values["-CODE_LOGIN-"]
+        password = self.values["-CODE_PASSWORD-"]
+        code = self.values["-CODE-"]
+
+        if not (Verifier.username_is_valid(login) and Verifier.password_is_valid(password)):
+            psg.Popup("Данные не допустимы")
+            return
+
+        if not DataBase().user_exist(login):
+            psg.Popup("Данного пользователя не существует")
+            return
+
+        if code == "" or not DataBase().check_recovery_for_user(user=DataBase().get_user(login), code=int(code)):
+            psg.Popup("Неверный код для востановления")
+            return
+
+        DataBase().set_password_for_user(DataBase().get_user(login), password)
+        DataBase().delete_recovery_for_user(DataBase().get_user(login))
+        self.change_window(UserForm(DataBase().get_user(login)))
 
 
 class LoginForm(TemplateForm):
@@ -142,7 +178,7 @@ class LoginForm(TemplateForm):
               [psg.Push(background_color=Theme.push_background), psg.Text("Пароль", font=(FONT_NAME, 20, "bold"), background_color=Theme.text_background), psg.Push(background_color=Theme.push_background)],
               [psg.Push(background_color=Theme.push_background), psg.Input("", key="-PASSWORD-", size=(20, 1), password_char="*"), psg.Push(background_color=Theme.push_background)],
               [psg.Push(background_color=Theme.push_background), psg.Button("Вход", key="-LOG_IN-", size=(20, 1), font=(FONT_NAME, 15, "bold"), button_color=Theme.button_color), psg.Push(background_color=Theme.push_background)],
-              [psg.VPush(background_color=Theme.push_background)]]
+              [psg.Push(background_color=Theme.push_background), psg.Button("Забыли пароль", key="-FORGET_PASSWORD-", size=(15, 1), font=(FONT_NAME, 10, "bold"), button_color=Theme.button_color), psg.VPush(background_color=Theme.push_background)]]
 
     WINDOW_SIZE = (200, 250)
 
@@ -152,6 +188,7 @@ class LoginForm(TemplateForm):
         self.EVENT_FUNCS = {
             "-BACK-": lambda: self.back(),
             "-LOG_IN-": lambda: self.login(),
+            "-FORGET_PASSWORD-": lambda: self.forget_password(),
         }
 
     def login(self) -> None:
@@ -167,6 +204,9 @@ class LoginForm(TemplateForm):
         else:
             self.change_window(UserForm(DataBase().get_user(tmp_user)))
             return
+
+    def forget_password(self):
+        self.change_window(RecoveryForm())
 
     def back(self) -> None:
         self.change_window(StartForm())
@@ -452,8 +492,8 @@ class AdminForm(TemplateForm):
 if __name__ == "__main__":
     # form = UserForm(DataBase().get_user("root"))
     # form = AdminForm(DataBase().get_user("root"))
-    form = StartForm()
-    # form = RecoveryForm()
+    # form = StartForm()
+    form = RecoveryForm()
 
     event_loop = asyncio.get_event_loop()
     asyncio.set_event_loop(event_loop)

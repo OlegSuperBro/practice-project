@@ -61,9 +61,11 @@ class DataBase:
     def __init__(self, connection=get_connection()) -> None:
         self.connection = connection
 
-    def user_exist(self, user: User):
+    def user_exist(self, user: Union[User, str]):
+        if isinstance(user, User):
+            user = user.login
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
-            cur.execute(f"SELECT * FROM users WHERE login='{user.login}'")
+            cur.execute(f"SELECT * FROM users WHERE login='{user}'")
             return len(cur.fetchall()) != 0
 
     def register_user(self, user: User) -> None:
@@ -81,7 +83,7 @@ class DataBase:
 
     def check_recovery_for_user(self, user: User, code: int) -> bool:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
-            cur.execute(f"SELECT * FROM users WHERE recovery_code={code} AND login={user.login}")
+            cur.execute(f"SELECT * FROM users WHERE recovery_code={code} AND login='{user.login}'")
             return len(cur.fetchall()) > 0
 
     def get_vacations_for_user(self, user: User) -> List[Vacation]:
@@ -120,7 +122,7 @@ class DataBase:
     def get_recovery_for_user(self, user: User) -> int:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
             cur.execute(f"SELECT recovery_code FROM users WHERE login='{user.login}'")
-            return cur.fetchone[0]
+            return cur.fetchone()[0]
 
     def get_user(self, user: Union[str, User]) -> Union[User, None]:
         if isinstance(user, User):
@@ -150,13 +152,23 @@ class DataBase:
             if commit:
                 self.commit()
 
-    def set_recovery_for_user(self, user: User, code: int) -> None:
+    def delete_recovery_for_user(self, user: User, commit: bool = True) -> None:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
-            cur.execute(f"UPDATE users SET recovery_code={code} WHERE login={user.login}")
+            cur.execute(f"UPDATE users SET recovery_code=null WHERE login='{user.login}'")
+            if commit:
+                self.commit()
 
-    def set_password_for_user(self, user: User, password: int) -> None:
+    def set_recovery_for_user(self, user: User, code: int, commit: bool = True) -> None:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
-            cur.execute(f"UPDATE users SET password={password} WHERE login={user.login}")
+            cur.execute(f"UPDATE users SET recovery_code={code} WHERE login='{user.login}'")
+            if commit:
+                self.commit()
+
+    def set_password_for_user(self, user: User, password: int, commit: bool = True) -> None:
+        with self.connection.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute(f"UPDATE users SET password={password} WHERE login='{user.login}'")
+            if commit:
+                self.commit()
 
     def commit(self) -> None:
         self.connection.commit()
