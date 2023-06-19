@@ -2,11 +2,10 @@ import PySimpleGUI as psg
 import asyncio
 import datetime
 import sys
-import openpyxl
 from typing import Self
 from copy import deepcopy
 
-from database import DataBase, Verifier
+from database import DataBase, Verifier, ping_connection, export_to_excel
 from datatypes import User, Post, Vacation
 from recover import send_recovery_email, create_recovery_code, create_recovery_text
 
@@ -73,6 +72,10 @@ class StartForm(TemplateForm):
     WINDOW_SIZE = (225, 175)
 
     def __init__(self) -> None:
+        if not ping_connection():
+            psg.popup("База данных не доступна. Возможно она в данный момент оффлайн.", title="Ошибка")
+            sys.exit(0)
+
         super().__init__()
 
         self.EVENT_FUNCS = {
@@ -88,22 +91,13 @@ class StartForm(TemplateForm):
         self.change_window(RegisterForm())
 
     def export_vacations(self):
-        file_path = psg.PopupGetFile("Сохранить как", "Сохранить как...", save_as=True, no_window=True)
+        file_path = psg.PopupGetFile("Сохранить как", "Сохранить как...", save_as=True, no_window=True, file_types=[("Excel 2010 files", "*.xlsx")])
 
-        if file_path is None:
+        if file_path == "":
             return
 
-        all_user = DataBase().get_users()
+        workbook = export_to_excel()
 
-        workbook = openpyxl.Workbook()
-        worksheet = workbook.active
-
-        for user in all_user:
-            tmp_username = f"{user.first_name if user.first_name is not None else ''} {user.second_name if user.second_name is not None else ''} {user.surname if user.second_name is not None else ''}"
-            tmp_str = ""
-            for vacation in user.vacations:
-                tmp_str += f"{vacation.start_date.strftime('%d/%m/%Y')}-{vacation.end_date.strftime('%d/%m/%Y')}\n"
-            worksheet.append([tmp_username, tmp_str])
         try:
             workbook.save(file_path)
             psg.popup("Экспортировано успешно")
@@ -120,9 +114,9 @@ class RecoveryForm(TemplateForm):
               [psg.Push(background_color=Theme.push_background), psg.Button("Отправить запрос", key="-SEND_REQUEST-", button_color=Theme.button_color)],
               [psg.Text("Если у вас уже есть код введите его", background_color=Theme.text_background)],
               [psg.Text("Логин", background_color=Theme.text_background), psg.Input(size=(20, 1), key="-CODE_LOGIN-"), psg.Text("Код", background_color=Theme.text_background), psg.Input(size=(10, 1), key="-CODE-")],
-              [psg.Text("Новый пароль", background_color=Theme.text_background), psg.Input(size=(20, 1), key="-CODE_PASSWORD-"), psg.Button("Изменить пароль", key="-CHANGE_PASSWORD-", button_color=Theme.button_color)]]
+              [psg.Text("Новый пароль", background_color=Theme.text_background), psg.Input(size=(20, 1), key="-CODE_PASSWORD-", password_char="*"), psg.Button("Изменить пароль", key="-CHANGE_PASSWORD-", button_color=Theme.button_color)]]
 
-    WINDOW_SIZE = (500, 500)
+    WINDOW_SIZE = (500, 350)
 
     def __init__(self) -> None:
         super().__init__()
@@ -146,13 +140,15 @@ class RecoveryForm(TemplateForm):
             return
 
         create_recovery_code(DataBase().get_user(login))
-        send_recovery_email(create_recovery_text(DataBase().get_user(login)))
+        send_recovery_email(create_recovery_text(DataBase().get_user(login), additional_info=self.values["-ADDITIONAL_INFO-"]))
         psg.popup("Запрос отправлен успешно")
 
     def change_password(self):
         login = self.values["-CODE_LOGIN-"]
         password = self.values["-CODE_PASSWORD-"]
         code = self.values["-CODE-"]
+        
+        
 
         if not (Verifier.username_is_valid(login) and Verifier.password_is_valid(password)):
             psg.Popup("Данные не допустимы")
@@ -220,12 +216,11 @@ class RegisterForm(TemplateForm):
               [psg.Push(background_color=Theme.push_background), psg.Column([[psg.Text("Отчество", font=(FONT_NAME, 20, "bold"), background_color=Theme.text_background)], [psg.Input("", key="-SURNAME-", size=(20, 1))]], background_color=Theme.column_color),
                psg.Push(background_color=Theme.push_background), psg.Column([[psg.Text("Должность", font=(FONT_NAME, 20, "bold"), background_color=Theme.text_background)], [psg.Combo([post.name.capitalize() for post in DataBase().get_posts()], key="-POST-", size=(18, 1), readonly=True)]], background_color=Theme.column_color), psg.Push(background_color=Theme.push_background)],
 
-              [psg.Push(background_color=Theme.push_background), psg.Column([[psg.Text("Логин", font=(FONT_NAME, 20, "bold"), background_color=Theme.text_background)],
-                                                                             [psg.Input("", key="-LOGIN-", size=(20, 1))],
-                                                                             [psg.Text("Пароль", font=(FONT_NAME, 20, "bold"), background_color=Theme.text_background)],
-                                                                             [psg.Input("", key="-PASSWORD-", size=(20, 1), password_char="*")]], background_color=Theme.column_color),
-               psg.Push(background_color=Theme.push_background), psg.vbottom(psg.Button("Регистрация", key="-REGISTER-", size=(20, 1), font=(FONT_NAME, 10, "bold"), button_color=Theme.button_color)), psg.Push(background_color=Theme.push_background)],
-              [psg.VPush()]]
+              [psg.Push(background_color=Theme.push_background), psg.Column([[psg.Column([[psg.Text("Логин", font=(FONT_NAME, 20, "bold"), background_color=Theme.text_background)],
+                                                                                          [psg.Input("", key="-LOGIN-", size=(20, 1))]], background_color=Theme.column_color)],
+                                                                             [psg.Column([[psg.Text("Пароль", font=(FONT_NAME, 20, "bold"), background_color=Theme.text_background)],
+                                                                                          [psg.Input("", key="-PASSWORD-", size=(20, 1), password_char="*"), psg.Push(background_color=Theme.push_background),  psg.Button("Регистрация", key="-REGISTER-", size=(20, 1), font=(FONT_NAME, 10, "bold"), button_color=Theme.button_color)]], background_color=Theme.column_color)]],
+                                                                            background_color=Theme.column_color), psg.Push(background_color=Theme.push_background)]]
 
     WINDOW_SIZE = (400, 400)
 
@@ -280,7 +275,7 @@ class UserForm(TemplateForm):
               [psg.Listbox([], key="-VACATIONS_LIST-", no_scrollbar=True, expand_x=True, expand_y=True)],
               [psg.Push(background_color=Theme.column_color), psg.Button("Сохранить", key="-SAVE-", button_color=Theme.button_color)]]
 
-    WINDOW_SIZE = (350, 250)
+    WINDOW_SIZE = (375, 250)
 
     WINDOW_TIMEOUT = 100
 
@@ -353,6 +348,7 @@ class UserForm(TemplateForm):
                 psg.popup(f"Дата начала отпуска не может быть меньше даты окончания ({index1 + 1})", title="Ошибка")
                 return
 
+        DataBase().delete_vacations_for_user(self.user, commit=False)
         for vacation in self.vacations:
             DataBase().add_vacation(self.user, vacation)
         psg.Popup("Успешно сохранено")
@@ -478,6 +474,7 @@ class AdminForm(TemplateForm):
                 psg.popup(f"Дата начала отпуска не может быть меньше даты окончания ({index1 + 1})", title="Ошибка")
                 return
 
+        DataBase().delete_vacations_for_user(self.user)
         for vacation in self.vacations:
             DataBase().add_vacation(self.user, vacation)
         psg.Popup("Успешно сохранено")
@@ -492,8 +489,8 @@ class AdminForm(TemplateForm):
 if __name__ == "__main__":
     # form = UserForm(DataBase().get_user("root"))
     # form = AdminForm(DataBase().get_user("root"))
-    # form = StartForm()
-    form = RecoveryForm()
+    form = StartForm()
+    # form = RecoveryForm()
 
     event_loop = asyncio.get_event_loop()
     asyncio.set_event_loop(event_loop)

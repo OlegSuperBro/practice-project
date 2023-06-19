@@ -1,7 +1,12 @@
 import psycopg2
+import string
+import openpyxl
+import calendar
+from openpyxl.worksheet.worksheet import Worksheet
+from openpyxl.styles import Alignment
+from openpyxl.utils import get_column_letter
 from psycopg2.extras import DictCursor, DictRow
 from typing import List, Union
-import string
 
 from datatypes import User, Vacation, Post
 from config import CONFIG
@@ -55,6 +60,57 @@ def get_connection():
         return psycopg2.connect(dbname="vacations", user="postgres", password="root")
     except psycopg2.DatabaseError:
         return None
+
+
+def ping_connection():
+    if get_connection() is None:
+        return False
+    return True
+
+
+def export_to_excel() -> openpyxl.Workbook:
+    all_user = DataBase().get_users()
+
+    workbook = openpyxl.Workbook()
+    worksheet: Worksheet = workbook.active
+
+    worksheet.merge_cells(None, 1, 2, 1, len(calendar.month_name) - 1)
+    worksheet.cell(1, 2, "Месяцы")
+    worksheet["B1"].alignment = Alignment(horizontal="center")
+    worksheet.append(list(calendar.month_name))
+
+    worksheet.merge_cells(None, 1, 1, 2, 1)
+    worksheet.cell(1, 1, "ФИО")
+    worksheet["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    worksheet.append(list(calendar.month_name))
+
+    column_widths = []
+
+    for user in all_user:
+        tmp_username = f"{user.post.name.capitalize() if user.post is not None else ''}\n{user.first_name if user.first_name is not None else ''} {user.second_name if user.second_name is not None else ''} {user.surname if user.second_name is not None else ''}"
+        tmp_row = [tmp_username, [], [], [], [], [], [], [], [], [], [], [], []]
+        for vacation in user.vacations:
+            tmp_row[vacation.start_date.month].append(f"{vacation.start_date.strftime('%d/%m/%Y')} - {vacation.end_date.strftime('%d/%m/%Y')}")
+
+        for index, tmp_list in enumerate(tmp_row):
+            if isinstance(tmp_list, list):
+                tmp_row[index] = "\n".join(tmp_list)[1:]
+        worksheet.append(tmp_row)
+
+        for i, cell in enumerate(tmp_row):
+            if len(column_widths) > i:
+                if len(cell.split("\n")[0]) > column_widths[i]:
+                    column_widths[i] = len(cell.split("\n")[0])
+            else:
+                column_widths += [len(cell.split("\n")[0])]
+
+    for i, column_width in enumerate(column_widths, 1):
+        worksheet.column_dimensions[get_column_letter(i)].width = column_width
+    worksheet.column_dimensions[get_column_letter(1)].width = 30
+
+    worksheet.delete_rows(3)
+
+    return workbook
 
 
 class DataBase:
@@ -137,6 +193,8 @@ class DataBase:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
             cur.execute("SELECT * FROM users")
             result = cur.fetchall()
+            for index, value in enumerate(result):
+                result[index]["post"] = self.get_post(value.get("post"))
             return [User.from_sql(**data, vacations=self.get_vacations_for_user(User(_id=data.get("id")))) for data in result]
 
     def add_vacation(self, user: User, vacation: Vacation, commit: bool = True) -> None:
@@ -166,7 +224,7 @@ class DataBase:
 
     def set_password_for_user(self, user: User, password: int, commit: bool = True) -> None:
         with self.connection.cursor(cursor_factory=DictCursor) as cur:
-            cur.execute(f"UPDATE users SET password={password} WHERE login='{user.login}'")
+            cur.execute(f"UPDATE users SET password='{password}' WHERE login='{user.login}'")
             if commit:
                 self.commit()
 
@@ -183,7 +241,9 @@ class DataBase:
 
 
 if __name__ == "__main__":
-    user = DataBase().get_user("root")
-    print(user)
-    vacations = DataBase().get_vacations_for_user(user)
-    print(vacations)
+    # user = DataBase().get_user("root")
+    # print(user)
+    # vacations = DataBase().get_vacations_for_user(user)
+    # print(vacations)
+
+    export_to_excel()
