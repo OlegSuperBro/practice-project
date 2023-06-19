@@ -1,7 +1,7 @@
 smtp_server: "smtp.gmail.com"
 smtp_port: 587
 send_mail: olegrakovic323@gmail.com
-send_mail_password: yfyxtgwaiajllaia
+send_mail_password: 
 
 
 recovery_mail: olegrakovic323@gmail.com
