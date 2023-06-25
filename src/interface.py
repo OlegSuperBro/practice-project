@@ -302,7 +302,7 @@ class UserForm(TemplateForm):
         self.update_vacations_list()
 
     def update_vacations_list(self) -> None:
-        self.window["-VACATIONS_LIST-"].update([f"{index + 1}. {vacation.start_date.strftime('%d-%m-%Y')} - {vacation.end_date.strftime('%d-%m-%Y')}" for index, vacation in enumerate(self.vacations)])
+        self.window["-VACATIONS_LIST-"].update([f"{index + 1}. {vacation.start_date.strftime('%d-%m-%Y')} - {vacation.end_date.strftime('%d-%m-%Y')}" for index, vacation in enumerate(sorted(self.vacations, key=lambda x: (x.end_date - x.start_date)))])
 
     def _loop_step(self) -> None:
         super()._loop_step()

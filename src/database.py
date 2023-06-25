@@ -2,6 +2,7 @@ import psycopg2
 import string
 import openpyxl
 import calendar
+import locale
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
@@ -57,7 +58,7 @@ def get_connection():
     None - No connection :(  (error accured, possibly database is offline)
     """
     try:
-        return psycopg2.connect(dbname="vacations", user="postgres", password="root")
+        return psycopg2.connect(dbname=CONFIG.database_name, user=CONFIG.database_user, password=CONFIG.database_password)
     except psycopg2.DatabaseError:
         return None
 
@@ -74,21 +75,28 @@ def export_to_excel() -> openpyxl.Workbook:
     workbook = openpyxl.Workbook()
     worksheet: Worksheet = workbook.active
 
-    worksheet.merge_cells(None, 1, 2, 1, len(calendar.month_name) - 1)
-    worksheet.cell(1, 2, "Месяцы")
-    worksheet["B1"].alignment = Alignment(horizontal="center")
-    worksheet.append(list(calendar.month_name))
-
     worksheet.merge_cells(None, 1, 1, 2, 1)
-    worksheet.cell(1, 1, "ФИО")
+    worksheet.cell(1, 1, "Должность")
     worksheet["A1"].alignment = Alignment(horizontal="center", vertical="center")
-    worksheet.append(list(calendar.month_name))
+
+    worksheet.merge_cells(None, 1, 2, 2, 2)
+    worksheet.cell(1, 2, "ФИО")
+    worksheet["B1"].alignment = Alignment(horizontal="center", vertical="center")
+
+    worksheet.merge_cells(None, 1, 3, 1, len(calendar.month_name) - 1 + 3)
+    worksheet.cell(1, 3, "Месяцы")
+    worksheet["C1"].alignment = Alignment(horizontal="center")
+
+    locale.setlocale(locale.LC_ALL, "ru")
+    worksheet.append([""] + list(calendar.month_name))
+    locale.setlocale(locale.LC_ALL, locale.getdefaultlocale())
 
     column_widths = []
 
     for user in all_user:
-        tmp_username = f"{user.post.name.capitalize() if user.post is not None else ''}\n{user.first_name if user.first_name is not None else ''} {user.second_name if user.second_name is not None else ''} {user.surname if user.second_name is not None else ''}"
-        tmp_row = [tmp_username, [], [], [], [], [], [], [], [], [], [], [], []]
+        tmp_post = f"{user.post.name.capitalize() if user.post is not None else ''}"
+        tmp_username = f"{user.first_name if user.first_name is not None else ''} {user.second_name if user.second_name is not None else ''} {user.surname if user.second_name is not None else ''}"
+        tmp_row = [tmp_post, tmp_username, [], [], [], [], [], [], [], [], [], [], [], []]
         for vacation in user.vacations:
             tmp_row[vacation.start_date.month].append(f"{vacation.start_date.strftime('%d/%m/%Y')} - {vacation.end_date.strftime('%d/%m/%Y')}")
 
